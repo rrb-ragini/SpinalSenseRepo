@@ -8,15 +8,16 @@ export default function ChatPanel({ analysis }) {
   ]);
 
   const [text, setText] = useState("");
-  const chatRef = useRef(null);
+  const chatRef = useRef();
 
+  // When Cobb angle result arrives, inject into chat
   useEffect(() => {
     if (analysis) {
-      setMessages((prev) => [
+      setMessages(prev => [
         ...prev,
         {
           role: "assistant",
-          content: `Cobb angle detected: ${analysis.cobb_angle}°.\n${analysis.explanation ?? ""}`,
+          content: `Cobb angle detected: ${analysis.cobb_angle}°.\n${analysis.explanation || ""}`
         }
       ]);
     }
@@ -34,35 +35,54 @@ export default function ChatPanel({ analysis }) {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages }),
+        body: JSON.stringify({ messages: newMessages })
       });
 
       const json = await res.json();
 
-      if (json.error) {
-        setMessages((prev) => [
+      // Guardrail: Off-topic or profanity
+      if (json.error && json.assistant) {
+        setMessages(prev => [...prev, json.assistant]);
+        return;
+      }
+
+      // Guardrail: Moderation warning
+      if (json.moderation?.flagged) {
+        setMessages(prev => [
           ...prev,
-          { role: "assistant", content: "⚠ Error: " + json.error }
+          {
+            role: "assistant",
+            content: "⚠️ Your message could not be processed due to safety policies."
+          }
         ]);
         return;
       }
 
-      const assistant = json.assistant ?? {
-        role: "assistant",
-        content: "⚠ The AI returned no response.",
-      };
+      // Guardrail: No assistant message
+      if (!json.assistant?.content) {
+        setMessages(prev => [
+          ...prev,
+          { role: "assistant", content: "⚠️ I was unable to provide a response." }
+        ]);
+        return;
+      }
 
-      setMessages((prev) => [...prev, assistant]);
-
+      // SUCCESS: Append assistant response
+      setMessages(prev => [...prev, json.assistant]);
     } catch (err) {
-      setMessages((prev) => [
+      // Network / unknown error fallback
+      setMessages(prev => [
         ...prev,
-        { role: "assistant", content: "⚠ Network error. Try again later." }
+        { role: "assistant", content: "⚠️ Network error. Please try again." }
       ]);
     }
 
+    // Auto-scroll down after rendering
     setTimeout(() => {
-      chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
+      chatRef.current?.scrollTo({
+        top: chatRef.current.scrollHeight,
+        behavior: "smooth"
+      });
     }, 100);
   };
 
@@ -73,15 +93,14 @@ export default function ChatPanel({ analysis }) {
           <ChatMessage key={i} msg={m} />
         ))}
       </div>
-
       <div className="chat-input">
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           className="flex-1 border p-3 rounded-md"
-          placeholder="Ask about exercises, posture or your spine health…"
+          placeholder="Ask about posture, scoliosis, stretches..."
         />
-        <button onClick={send} className="px-4 py-2 border rounded-md">
+        <button onClick={send} className="px-4 py-2 rounded border">
           Send
         </button>
       </div>
