@@ -93,7 +93,6 @@ You are SpinalSense, an AI assistant limited ONLY to spinal health education.
 
 ### WHEN ANSWERING:
 - ALWAYS include this disclaimer at the bottom:
-  "**Disclaimer: I am not a medical professional. For diagnosis or treatment, consult a licensed clinician.**"
 - Provide **gentle, general, low-risk educational guidance only.**
 - NEVER provide high-risk exercises (heavy lifting, aggressive stretching).
 - ALWAYS suggest consulting a physiotherapist for personalized advice.
@@ -145,14 +144,6 @@ Respond in clean natural language. Avoid JSON.
         { status: 200 }
       );
     }
-
-    // ALWAYS append disclaimer
-    const safeOutput = {
-      role: "assistant",
-      content:
-        assistant.content +
-        "\n\n**Disclaimer: I am not a medical professional. For diagnosis or treatment, consult a licensed clinician.**",
-    };
 
     return Response.json({ assistant: safeOutput });
   } catch (err) {
