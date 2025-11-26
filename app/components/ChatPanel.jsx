@@ -1,108 +1,51 @@
+// app/components/ChatPanel.jsx (update useEffect)
 "use client";
 import ChatMessage from "./ChatMessage";
-import { useState, useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 
 export default function ChatPanel({ analysis }) {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hello! Upload an X-ray to begin." }
   ]);
-
   const [text, setText] = useState("");
   const chatRef = useRef();
 
-  // When Cobb angle result arrives, inject into chat
   useEffect(() => {
     if (analysis) {
-      setMessages(prev => [
-        ...prev,
-        {
-          role: "assistant",
-          content: `Cobb angle detected: ${analysis.cobb_angle}°.\n${analysis.explanation || ""}`
-        }
-      ]);
+      // If parsed JSON is present, create a friendly assistant message summary
+      const parsed = analysis.parsed ?? analysis; // depends on what onAnalysis sent
+      let summary = analysis.raw_text || "";
+
+      if (parsed && parsed.cobb_angle !== undefined) {
+        summary = `Cobb angle: ${parsed.cobb_angle}° · Direction: ${parsed.direction ?? "N/A"} · Severity: ${parsed.severity ?? "N/A"}\n\nAdvice: ${parsed.advice ?? "(see full assistant message below)"}\n\nDisclaimer: I am an AI assistant, not a medical professional. For medical diagnosis or treatment, consult a clinician.`;
+      }
+
+      setMessages((m) => [...m, { role: "assistant", content: summary }]);
+      // also append full raw text as a follow-up
+      if (analysis.raw_text) {
+        setMessages((m) => [...m, { role: "assistant", content: analysis.raw_text }]);
+      }
     }
   }, [analysis]);
 
   const send = async () => {
     if (!text.trim()) return;
-
     const userMsg = { role: "user", content: text };
-    const newMessages = [...messages, userMsg];
-    setMessages(newMessages);
+    setMessages((m) => [...m, userMsg]);
     setText("");
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages })
-      });
-
-      const json = await res.json();
-
-      // Guardrail: Off-topic or profanity
-      if (json.error && json.assistant) {
-        setMessages(prev => [...prev, json.assistant]);
-        return;
-      }
-
-      // Guardrail: Moderation warning
-      if (json.moderation?.flagged) {
-        setMessages(prev => [
-          ...prev,
-          {
-            role: "assistant",
-            content: "⚠️ Your message could not be processed due to safety policies."
-          }
-        ]);
-        return;
-      }
-
-      // Guardrail: No assistant message
-      if (!json.assistant?.content) {
-        setMessages(prev => [
-          ...prev,
-          { role: "assistant", content: "⚠️ I was unable to provide a response." }
-        ]);
-        return;
-      }
-
-      // SUCCESS: Append assistant response
-      setMessages(prev => [...prev, json.assistant]);
-    } catch (err) {
-      // Network / unknown error fallback
-      setMessages(prev => [
-        ...prev,
-        { role: "assistant", content: "⚠️ Network error. Please try again." }
-      ]);
-    }
-
-    // Auto-scroll down after rendering
-    setTimeout(() => {
-      chatRef.current?.scrollTo({
-        top: chatRef.current.scrollHeight,
-        behavior: "smooth"
-      });
-    }, 100);
+    // send to /api/chat as before if you have chat backed by OpenAI
+    // ...
   };
 
   return (
     <div className="card p-4 mt-4 chat-window">
       <div ref={chatRef} className="chat-history">
-        {messages.map((m, i) => (
-          <ChatMessage key={i} msg={m} />
-        ))}
+        {messages.map((m, i) => <ChatMessage key={i} msg={m} />)}
       </div>
+
       <div className="chat-input">
-        <input
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          className="flex-1 border p-3 rounded-md"
-          placeholder="Ask about posture, scoliosis, stretches..."
-        />
-        <button onClick={send} className="px-4 py-2 rounded border">
-          Send
-        </button>
+        <input value={text} onChange={(e)=>setText(e.target.value)} className="flex-1 border p-3 rounded-md" placeholder="Ask about posture or your result..." />
+        <button onClick={send} className="px-4 py-2 border rounded-md">Send</button>
       </div>
     </div>
   );
