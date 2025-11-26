@@ -8,15 +8,15 @@ export default function ChatPanel({ analysis }) {
   ]);
 
   const [text, setText] = useState("");
-  const chatRef = useRef();
+  const chatRef = useRef(null);
 
   useEffect(() => {
     if (analysis) {
-      setMessages(m => [
-        ...m,
-        { 
-          role: "assistant", 
-          content: `Cobb angle detected: ${analysis.cobb_angle}°.\n${analysis.explanation ?? ""}` 
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: "assistant",
+          content: `Cobb angle detected: ${analysis.cobb_angle}°.\n${analysis.explanation ?? ""}`,
         }
       ]);
     }
@@ -26,37 +26,60 @@ export default function ChatPanel({ analysis }) {
     if (!text.trim()) return;
 
     const userMsg = { role: "user", content: text };
-
     const newMessages = [...messages, userMsg];
     setMessages(newMessages);
     setText("");
 
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ messages: newMessages })
-    });
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newMessages }),
+      });
 
-    const json = await res.json();
-    setMessages(m => [...m, json.assistant]);
+      const json = await res.json();
+
+      if (json.error) {
+        setMessages((prev) => [
+          ...prev,
+          { role: "assistant", content: "⚠ Error: " + json.error }
+        ]);
+        return;
+      }
+
+      const assistant = json.assistant ?? {
+        role: "assistant",
+        content: "⚠ The AI returned no response.",
+      };
+
+      setMessages((prev) => [...prev, assistant]);
+
+    } catch (err) {
+      setMessages((prev) => [
+        ...prev,
+        { role: "assistant", content: "⚠ Network error. Try again later." }
+      ]);
+    }
 
     setTimeout(() => {
-      chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight });
+      chatRef.current?.scrollTo({ top: chatRef.current.scrollHeight, behavior: "smooth" });
     }, 100);
   };
 
   return (
     <div className="card p-4 mt-4 chat-window">
       <div ref={chatRef} className="chat-history">
-        {messages.map((m, i) => <ChatMessage key={i} msg={m} />)}
+        {messages.map((m, i) => (
+          <ChatMessage key={i} msg={m} />
+        ))}
       </div>
 
       <div className="chat-input">
-        <input 
+        <input
           value={text}
           onChange={(e) => setText(e.target.value)}
           className="flex-1 border p-3 rounded-md"
-          placeholder="Ask about exercises, posture, lifestyle..."
+          placeholder="Ask about exercises, posture or your spine health…"
         />
         <button onClick={send} className="px-4 py-2 border rounded-md">
           Send
