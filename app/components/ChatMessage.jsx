@@ -1,8 +1,9 @@
 export default function ChatMessage({ msg }) {
-  const user = msg.role === "user";
+  const isUser = msg.role === "user";
+
   return (
-    <div style={{ display: "flex", justifyContent: user ? "flex-end" : "flex-start", marginBottom: 12 }}>
-      <div className={`p-3 rounded-lg ${user ? "bg-primary-500 text-white" : "bg-white border"}`} style={{ maxWidth: "78%" }}>
+    <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-2`}>
+      <div className={`p-3 rounded-lg max-w-[75%] ${isUser ? "bg-primary text-white" : "bg-white border"}`}>
         {msg.content}
       </div>
     </div>
