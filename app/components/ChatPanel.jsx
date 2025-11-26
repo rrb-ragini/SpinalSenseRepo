@@ -1,51 +1,56 @@
-// app/components/ChatPanel.jsx (update useEffect)
 "use client";
+
+import { useState } from "react";
 import ChatMessage from "./ChatMessage";
-import { useEffect, useRef, useState } from "react";
 
 export default function ChatPanel({ analysis }) {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hello! Upload an X-ray to begin." }
   ]);
-  const [text, setText] = useState("");
-  const chatRef = useRef();
+  const [input, setInput] = useState("");
 
-  useEffect(() => {
-    if (analysis) {
-      // If parsed JSON is present, create a friendly assistant message summary
-      const parsed = analysis.parsed ?? analysis; // depends on what onAnalysis sent
-      let summary = analysis.raw_text || "";
-
-      if (parsed && parsed.cobb_angle !== undefined) {
-        summary = `Cobb angle: ${parsed.cobb_angle}° · Direction: ${parsed.direction ?? "N/A"} · Severity: ${parsed.severity ?? "N/A"}\n\nAdvice: ${parsed.advice ?? "(see full assistant message below)"}\n\nDisclaimer: I am an AI assistant, not a medical professional. For medical diagnosis or treatment, consult a clinician.`;
-      }
-
-      setMessages((m) => [...m, { role: "assistant", content: summary }]);
-      // also append full raw text as a follow-up
-      if (analysis.raw_text) {
-        setMessages((m) => [...m, { role: "assistant", content: analysis.raw_text }]);
-      }
-    }
-  }, [analysis]);
+  // Add analysis message when it arrives
+  if (analysis && !messages.some(m => m.role === "analysis")) {
+    messages.push({
+      role: "analysis",
+      content: analysis.parsed
+    });
+  }
 
   const send = async () => {
-    if (!text.trim()) return;
-    const userMsg = { role: "user", content: text };
-    setMessages((m) => [...m, userMsg]);
-    setText("");
-    // send to /api/chat as before if you have chat backed by OpenAI
-    // ...
+    if (!input.trim()) return;
+
+    const userMsg = { role: "user", content: input };
+    setMessages(msgs => [...msgs, userMsg]);
+    setInput("");
+
+    const res = await fetch("/api/chat", {
+      method: "POST",
+      body: JSON.stringify({ message: input })
+    });
+
+    const json = await res.json();
+    setMessages(msgs => [...msgs, { role: "assistant", content: json.reply }]);
   };
 
   return (
-    <div className="card p-4 mt-4 chat-window">
-      <div ref={chatRef} className="chat-history">
-        {messages.map((m, i) => <ChatMessage key={i} msg={m} />)}
+    <div className="flex flex-col h-full">
+      <div className="flex-1 overflow-y-auto space-y-3 pr-2">
+        {messages.map((msg, i) => (
+          <ChatMessage key={i} msg={msg} />
+        ))}
       </div>
 
-      <div className="chat-input">
-        <input value={text} onChange={(e)=>setText(e.target.value)} className="flex-1 border p-3 rounded-md" placeholder="Ask about posture or your result..." />
-        <button onClick={send} className="px-4 py-2 border rounded-md">Send</button>
+      <div className="mt-2 flex gap-2">
+        <input
+          className="flex-1 border p-2 rounded"
+          placeholder="Ask about posture, exercises…"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+        />
+        <button onClick={send} className="px-4 bg-primary text-white rounded">
+          Send
+        </button>
       </div>
     </div>
   );
