@@ -7,25 +7,19 @@ export const dynamic = "force-dynamic";
 function getClient() {
   const key = process.env.OPENAI_API_KEY;
   if (!key) {
-    console.error("OPENAI_API_KEY missing at runtime");
+    console.error("❌ OPENAI_API_KEY missing at runtime");
     return null;
   }
   return new OpenAI({ apiKey: key });
 }
 
-/**
- * Defensive infer handler:
- * - Always returns JSON
- * - Logs raw OpenAI response
- * - Returns raw_output when parsing fails
- */
 export async function POST(req) {
   try {
     const form = await req.formData();
     const file = form.get("file");
 
     if (!file) {
-      return new Response(JSON.stringify({ error: "No file uploaded." }), { status: 400, headers: { "content-type": "application/json" } });
+      return Response.json({ error: "No file uploaded." }, { status: 400 });
     }
 
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -34,12 +28,15 @@ export async function POST(req) {
 
     const client = getClient();
     if (!client) {
-      return new Response(JSON.stringify({ error: "Server misconfigured - OPENAI_API_KEY missing." }), { status: 500, headers: { "content-type": "application/json" } });
+      return Response.json(
+        { error: "Server misconfigured - Missing OPENAI_API_KEY" },
+        { status: 500 }
+      );
     }
 
     const prompt = `
 You are a professional radiology assistant.
-Return STRICT JSON only (no explanation text). The JSON shape should be:
+Return STRICT JSON ONLY in this format:
 
 {
   "can_measure": true|false,
@@ -47,104 +44,61 @@ Return STRICT JSON only (no explanation text). The JSON shape should be:
   "severity": "<none|mild|moderate|severe|null>",
   "explanation": "<short text>"
 }
-
-If you cannot measure, set "can_measure": false and include "explanation".
 `;
 
-    const modelCandidates = "gpt-4.1";
+    // ✅ SINGLE correct model — supports image input
+    const model = "gpt-4o-mini";
 
-    let response = null;
-    let lastError = null;
+    console.log("📡 Calling OpenAI with model:", model);
 
-    for (const model of modelCandidates) {
-      try {
-        console.log(`Calling OpenAI with model=${model}`);
-        response = await client.chat.completions.create({
-          model,
-          messages: [
-            {
-              role: "user",
-              content: [
-                { type: "input_text", text: prompt },
-                { type: "input_image", image_url: dataUrl }
-              ]
-            }
-          ],
-          max_tokens: 800
-        });
-        // if response present, break
-        if (response) break;
-      } catch (err) {
-        lastError = err;
-        console.error(`OpenAI call failed for model ${model}:`, String(err));
-      }
+    const response = await client.chat.completions.create({
+      model,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "input_text", text: prompt },
+            { type: "input_image", image_url: dataUrl }
+          ]
+        }
+      ],
+      max_tokens: 800
+    });
+
+    console.log("📡 OpenAI raw content:", response);
+
+    const raw = response?.choices?.[0]?.message?.content;
+    if (!raw) {
+      return Response.json(
+        { error: "OpenAI returned no content", raw_output: response },
+        { status: 502 }
+      );
     }
 
-    // If we never got a response
-    if (!response) {
-      console.error("No OpenAI response; lastError:", lastError);
-      return new Response(JSON.stringify({
-        error: "No response from OpenAI",
-        details: String(lastError ?? "unknown")
-      }), { status: 502, headers: { "content-type": "application/json" } });
-    }
-
-    // Log the raw response object for debugging in Vercel
-    try {
-      console.log("OpenAI raw response:", JSON.stringify(response, null, 2));
-    } catch (e) {
-      console.log("OpenAI raw response (stringify failed):", String(e));
-    }
-
-    // Defensive extraction: SDK may return message content as string or structured
-    const raw = response?.choices?.[0]?.message?.content ?? null;
-    // If raw is undefined/null, also look for text field
-    const altRaw = response?.choices?.[0]?.message ?? response?.choices?.[0]?.text ?? null;
-
-    const rawStr = typeof raw === "string" ? raw : (typeof altRaw === "string" ? altRaw : (raw ? JSON.stringify(raw) : null));
-
-    if (!rawStr) {
-      // Nothing usable, return the full response under raw_output
-      return new Response(JSON.stringify({
-        error: "OpenAI returned no usable content",
-        raw_output: response
-      }), { status: 502, headers: { "content-type": "application/json" } });
-    }
-
-    // Try parse JSON; if fails extract JSON block
     let parsed = null;
     try {
-      parsed = JSON.parse(rawStr);
-    } catch (err) {
-      const match = rawStr.match(/\{[\s\S]*\}/);
-      if (match) {
-        try {
-          parsed = JSON.parse(match[0]);
-        } catch (err2) {
-          parsed = null;
-        }
-      }
+      parsed = JSON.parse(raw);
+    } catch {
+      const match = raw.match(/\{[\s\S]*\}/);
+      parsed = match ? JSON.parse(match[0]) : null;
     }
 
     if (!parsed) {
-      // Return raw output so frontend can show it
-      return new Response(JSON.stringify({
-        error: "Could not parse model output as JSON",
-        raw_output: rawStr
-      }), { status: 502, headers: { "content-type": "application/json" } });
+      return Response.json(
+        { error: "Could not parse JSON", raw_output: raw },
+        { status: 502 }
+      );
     }
 
-    // Normalize fields
-    parsed.can_measure = !!parsed.can_measure;
-    parsed.cobb_angle = parsed.cobb_angle != null ? Number(parsed.cobb_angle) : null;
-    parsed.severity = parsed.severity ?? null;
-    parsed.explanation = parsed.explanation ?? null;
     parsed.overlay_url = dataUrl;
 
-    return new Response(JSON.stringify(parsed), { status: 200, headers: { "content-type": "application/json" } });
+    return Response.json(parsed, { status: 200 });
 
   } catch (err) {
-    console.error("Infer route top-level error:", err);
-    return new Response(JSON.stringify({ error: "Server error", details: String(err) }), { status: 500, headers: { "content-type": "application/json" } });
+    console.error("❌ Infer route top-level error:", err);
+    return Response.json(
+      { error: "Server error", details: String(err) },
+      { status: 500 }
+    );
   }
 }
