@@ -1,5 +1,5 @@
 // app/api/infer/route.js
-import { analyzeImageWithVision } from '../../../lib/vision.js'; // adjust path if needed
+import { analyzeImageWithVision } from "../vision/route.js"; // adjust path if needed
 
 export const runtime = 'nodejs';
 
