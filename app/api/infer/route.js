@@ -48,7 +48,7 @@ Return STRICT JSON only with this shape:
 
     // ✅ Use ONLY gpt-4.1 (no iteration!)
     const response = await client.chat.completions.create({
-      model: "gpt-4.1",
+      model: "gpt-4o",
       messages: [
         {
           role: "user",
