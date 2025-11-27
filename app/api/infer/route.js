@@ -1,103 +1,51 @@
-import OpenAI from "openai";
+// app/api/infer/route.js
+import { analyzeImageWithVision } from '../../../lib/vision.js'; // adjust path if needed
 
-export const runtime = "nodejs"; // Needed to allow Buffer & uploads
-
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+export const runtime = 'nodejs';
 
 export async function POST(req) {
   try {
     const form = await req.formData();
-    const file = form.get("file");
+    const file = form.get('file'); // frontend must use fd.append('file', file)
 
     if (!file) {
-      return Response.json(
-        { error: "No file found. Expected form key: 'file'." },
-        { status: 400 }
-      );
+      return Response.json({ error: "No file. Expected form key 'file'." }, { status: 400 });
     }
 
-    // Convert File → Base64
-    const bytes = await file.arrayBuffer();
-    const base64 = Buffer.from(bytes).toString("base64");
-    const dataUrl = `data:${file.type};base64,${base64}`;
-
-    // Call OpenAI Vision (gpt-4o mini recommended for speed)
-    const response = await client.chat.completions.create({
-      model: "gpt-4o-mini",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: `You are a spine radiology expert. Analyze this X-ray and:
-- Detect presence and severity of scoliosis.
-- Identify top and bottom endplates for Cobb angle measurement.
-- Compute Cobb angle numerically.
-- Return VERY STRICT structured JSON ONLY. Format:
-
-{
-  "cobb_angle": <number>,
-  "severity": "<none/mild/moderate/severe>",
-  "explanation": "<short clinical explanation>",
-  "can_measure": true/false
-}
-
-If image quality is low, set "can_measure": false and explain why.`
-            },
-            {
-              type: "input_image",
-              image_url: dataUrl,
-            },
-          ],
-        }
-      ],
-      max_tokens: 300
-    });
-
-    const raw = response.choices[0].message.content;
-
-    // Try to parse JSON safely
-    let result = null;
-    try {
-      result = JSON.parse(raw);
-    } catch (err) {
-      return Response.json(
-        {
-          error: "Model returned non-JSON output.",
-          raw_output: raw
-        },
-        { status: 500 }
-      );
+    // Basic validation
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowed.includes(file.type)) {
+      return Response.json({ error: 'Unsupported file type: ' + file.type }, { status: 400 });
     }
 
-    if (!result.can_measure) {
-      return Response.json(
-        {
-          error: "Could not interpret this X-ray.",
-          explanation: result.explanation || "Image looks unclear or unreadable."
-        },
-        { status: 400 }
-      );
+    // Read bytes
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // Call analysis helper (will preprocess and call OpenAI)
+    const result = await analyzeImageWithVision(buffer, file.type, { maxSize: 1024 });
+
+    if (!result) {
+      return Response.json({ error: 'Analysis failed (no result).' }, { status: 500 });
     }
 
-    return Response.json(
-      {
-        cobb_angle: result.cobb_angle || 0,
-        explanation: result.explanation || "",
-        severity: result.severity || "unknown",
-        overlay_url: dataUrl // optional preview
-      },
-      { status: 200 }
-    );
+    // If model says cannot measure => forward message (status 400)
+    if (result.can_measure === false) {
+      return Response.json({
+        error: 'Could not interpret this X-ray.',
+        explanation: result.explanation ?? 'Image quality / orientation / spine not visible',
+      }, { status: 400 });
+    }
 
-  } catch (error) {
-    console.error("Inference error:", error);
-    return Response.json(
-      { error: "Unexpected server error.", details: error.message },
-      { status: 500 }
-    );
+    // Success
+    return Response.json({
+      cobb_angle: typeof result.cobb_angle === 'number' ? result.cobb_angle : null,
+      severity: result.severity ?? null,
+      explanation: result.explanation ?? null,
+      overlay_url: result.overlay_url ?? null
+    }, { status: 200 });
+
+  } catch (err) {
+    console.error('infer route error:', err);
+    return Response.json({ error: 'Server error', details: String(err) }, { status: 500 });
   }
 }
