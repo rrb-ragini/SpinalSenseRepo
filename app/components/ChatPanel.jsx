@@ -1,10 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
-export default function ChatPanel() {
+export default function ChatPanel({ analysis }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+
+  // 🔥 When analysis result arrives, insert it into chat
+  useEffect(() => {
+    if (!analysis) return;
+
+    const text = `📘 X-ray Analysis Result\n
+Cobb Angle: ${analysis.cobb_angle ?? "N/A"}°
+Severity: ${analysis.severity ?? "N/A"}
+Explanation: ${analysis.explanation ?? "N/A"}`;
+
+    setMessages((prev) => [
+      ...prev,
+      { role: "assistant", content: text }
+    ]);
+  }, [analysis]);
 
   const sendMessage = async () => {
     if (!input.trim()) return;
@@ -45,7 +60,9 @@ export default function ChatPanel() {
       <div className="mb-4 space-y-2 h-64 overflow-y-auto bg-white p-4 rounded">
         {messages.map((m, i) => (
           <div key={i} className={m.role === "user" ? "text-right" : "text-left"}>
-            <span className="block p-2 bg-gray-100 rounded">{m.content}</span>
+            <span className="block p-2 bg-gray-100 rounded whitespace-pre-wrap">
+              {m.content}
+            </span>
           </div>
         ))}
       </div>
