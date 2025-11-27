@@ -18,7 +18,7 @@ export default function UploadPanel({ onFiles, files = [], onAnalysis }) {
       const fd = new FormData();
       fd.append("file", files[0]);
 
-      const res = await fetch("/api/infer", { method: "POST", body: fd });
+      const res = await fetch("/app/api/infer", { method: "POST", body: fd });
       const json = await res.json();
 
       if (json.error) {
