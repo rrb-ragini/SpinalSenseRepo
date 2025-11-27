@@ -54,7 +54,7 @@ Return STRICT JSON only with this shape:
           role: "user",
           content: [
             { type: "text", text: prompt },
-            { type: "image_url", image_url: dataUrl }
+            { type: "image_url", image_url: {url: dataUrl}}
           ]
         }
       ],
